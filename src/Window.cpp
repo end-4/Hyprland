@@ -234,16 +234,7 @@ void CWindow::createToplevelHandle() {
 
     // handle events
     hyprListener_toplevelActivate.initCallback(
-        &m_phForeignToplevel->events.request_activate,
-        [&](void* owner, void* data) {
-            if (isHidden() && m_sGroupData.pNextWindow) {
-                // grouped, change the current to us
-                setGroupCurrent(this);
-            }
-
-            g_pCompositor->focusWindow(this);
-        },
-        this, "Toplevel");
+        &m_phForeignToplevel->events.request_activate, [&](void* owner, void* data) { g_pLayoutManager->getCurrentLayout()->requestFocusForWindow(this); }, this, "Toplevel");
 
     hyprListener_toplevelFullscreen.initCallback(
         &m_phForeignToplevel->events.request_fullscreen,
@@ -477,6 +468,10 @@ void CWindow::applyDynamicRule(const SWindowRule& r) {
         try {
             m_sAdditionalConfigData.rounding = std::stoi(r.szRule.substr(r.szRule.find_first_of(' ') + 1));
         } catch (std::exception& e) { Debug::log(ERR, "Rounding rule \"%s\" failed with: %s", r.szRule.c_str(), e.what()); }
+    } else if (r.szRule.find("bordersize") == 0) {
+        try {
+            m_sAdditionalConfigData.borderSize = std::stoi(r.szRule.substr(r.szRule.find_first_of(' ') + 1));
+        } catch (std::exception& e) { Debug::log(ERR, "Bordersize rule \"%s\" failed with: %s", r.szRule.c_str(), e.what()); }
     } else if (r.szRule.find("opacity") == 0) {
         try {
             CVarList vars(r.szRule, 0, ' ');
@@ -536,11 +531,14 @@ void CWindow::updateDynamicRules() {
     m_sAdditionalConfigData.rounding       = -1;
     m_sAdditionalConfigData.dimAround      = false;
     m_sAdditionalConfigData.forceRGBX      = false;
+    m_sAdditionalConfigData.borderSize     = -1;
 
     const auto WINDOWRULES = g_pConfigManager->getMatchingRules(this);
     for (auto& r : WINDOWRULES) {
         applyDynamicRule(r);
     }
+
+    g_pLayoutManager->getCurrentLayout()->recalculateMonitor(m_iMonitorID);
 }
 
 // check if the point is "hidden" under a rounded corner of the window

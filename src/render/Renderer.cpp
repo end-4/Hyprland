@@ -57,7 +57,7 @@ void renderSurface(struct wlr_surface* surface, int x, int y, void* data) {
 
     if (!g_pHyprRenderer->m_bBlockSurfaceFeedback) {
         wlr_surface_send_frame_done(surface, RDATA->when);
-        wlr_presentation_surface_sampled_on_output(g_pCompositor->m_sWLRPresentation, surface, RDATA->pMonitor->output);
+        wlr_presentation_surface_textured_on_output(g_pCompositor->m_sWLRPresentation, surface, RDATA->pMonitor->output);
     }
 
     // reset the UV, we might've set it above
@@ -357,13 +357,15 @@ void CHyprRenderer::renderWindow(CWindow* pWindow, CMonitor* pMonitor, timespec*
 
             scaleBox(&windowBox, pMonitor->scale);
 
-            const int BORDERSIZE = pWindow->m_sSpecialRenderData.borderSize.toUnderlying() == -1 ? *PBORDERSIZE : pWindow->m_sSpecialRenderData.borderSize.toUnderlying();
+            int borderSize = pWindow->m_sSpecialRenderData.borderSize.toUnderlying() == -1 ? *PBORDERSIZE : pWindow->m_sSpecialRenderData.borderSize.toUnderlying();
+            if (pWindow->m_sAdditionalConfigData.borderSize.toUnderlying() != -1)
+                borderSize = pWindow->m_sAdditionalConfigData.borderSize.toUnderlying();
 
-            g_pHyprOpenGL->renderBorder(&windowBox, grad, rounding, BORDERSIZE, a1);
+            g_pHyprOpenGL->renderBorder(&windowBox, grad, rounding, borderSize, a1);
 
             if (ANIMATED) {
                 float a2 = renderdata.fadeAlpha * renderdata.alpha * (1.f - g_pHyprOpenGL->m_pCurrentWindow->m_fBorderFadeAnimationProgress.fl());
-                g_pHyprOpenGL->renderBorder(&windowBox, g_pHyprOpenGL->m_pCurrentWindow->m_cRealBorderColorPrevious, rounding, BORDERSIZE, a2);
+                g_pHyprOpenGL->renderBorder(&windowBox, g_pHyprOpenGL->m_pCurrentWindow->m_cRealBorderColorPrevious, rounding, borderSize, a2);
             }
         }
     }
@@ -777,7 +779,7 @@ bool CHyprRenderer::attemptDirectScanout(CMonitor* pMonitor) {
     timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_surface_send_frame_done(PSURFACE, &now);
-    wlr_presentation_surface_sampled_on_output(g_pCompositor->m_sWLRPresentation, PSURFACE, pMonitor->output);
+    wlr_presentation_surface_scanned_out_on_output(g_pCompositor->m_sWLRPresentation, PSURFACE, pMonitor->output);
 
     if (wlr_output_commit(pMonitor->output)) {
         if (!m_pLastScanout) {
@@ -1071,7 +1073,6 @@ void CHyprRenderer::renderMonitor(CMonitor* pMonitor) {
         return;
     }
 
-    g_pProtocolManager->m_pScreencopyProtocolManager->onRenderEnd(pMonitor);
     pixman_region32_fini(&damage);
 
     if (UNLOCK_SC)
@@ -1586,6 +1587,8 @@ bool CHyprRenderer::applyMonitorRule(CMonitor* pMonitor, SMonitorRule* pMonitorR
     wlr_output_set_transform(pMonitor->output, pMonitorRule->transform);
     pMonitor->transform = pMonitorRule->transform;
 
+    const auto WLRREFRESHRATE = (wlr_backend_is_wl(pMonitor->output->backend) || wlr_backend_is_x11(pMonitor->output->backend)) ? 0 : pMonitorRule->refreshRate * 1000;
+
     // loop over modes and choose an appropriate one.
     if (pMonitorRule->resolution != Vector2D() && pMonitorRule->resolution != Vector2D(-1, -1) && pMonitorRule->resolution != Vector2D(-1, -2)) {
         if (!wl_list_empty(&pMonitor->output->modes) && pMonitorRule->drmMode.type != DRM_MODE_TYPE_USERDEF) {
@@ -1617,7 +1620,7 @@ bool CHyprRenderer::applyMonitorRule(CMonitor* pMonitor, SMonitorRule* pMonitorR
             }
 
             if (!found) {
-                wlr_output_set_custom_mode(pMonitor->output, (int)pMonitorRule->resolution.x, (int)pMonitorRule->resolution.y, (int)pMonitorRule->refreshRate * 1000);
+                wlr_output_set_custom_mode(pMonitor->output, (int)pMonitorRule->resolution.x, (int)pMonitorRule->resolution.y, WLRREFRESHRATE);
                 pMonitor->vecSize     = pMonitorRule->resolution;
                 pMonitor->refreshRate = pMonitorRule->refreshRate;
 
@@ -1665,7 +1668,7 @@ bool CHyprRenderer::applyMonitorRule(CMonitor* pMonitor, SMonitorRule* pMonitorR
                     }
                 }
             } else {
-                wlr_output_set_custom_mode(pMonitor->output, (int)pMonitorRule->resolution.x, (int)pMonitorRule->resolution.y, (int)pMonitorRule->refreshRate * 1000);
+                wlr_output_set_custom_mode(pMonitor->output, (int)pMonitorRule->resolution.x, (int)pMonitorRule->resolution.y, WLRREFRESHRATE);
             }
 
             pMonitor->vecSize     = pMonitorRule->resolution;
@@ -1889,7 +1892,7 @@ bool CHyprRenderer::applyMonitorRule(CMonitor* pMonitor, SMonitorRule* pMonitorR
                (int)pMonitor->vecPixelSize.y, pMonitor->refreshRate, pMonitor->scale, (int)pMonitor->transform, (int)pMonitor->vecPosition.x, (int)pMonitor->vecPosition.y,
                (int)pMonitor->enabled10bit);
 
-    g_pXWaylandManager->updateXWaylandScale();
+    EMIT_HOOK_EVENT("monitorLayoutChanged", nullptr);
 
     return true;
 }
@@ -1916,7 +1919,7 @@ void CHyprRenderer::ensureCursorRenderingMode() {
             m_bHasARenderedCursor = true;
 
             if (!m_bWindowRequestedCursorHide)
-                wlr_xcursor_manager_set_cursor_image(g_pCompositor->m_sWLRXCursorMgr, "left_ptr", g_pCompositor->m_sWLRCursor);
+                wlr_cursor_set_xcursor(g_pCompositor->m_sWLRCursor, g_pCompositor->m_sWLRXCursorMgr, "left_ptr");
 
             Debug::log(LOG, "Showing the cursor (timeout)");
 
