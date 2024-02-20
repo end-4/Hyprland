@@ -1110,11 +1110,20 @@ CWindow* CCompositor::getWindowForPopup(wlr_xdg_popup* popup) {
 
 wlr_surface* CCompositor::vectorToLayerSurface(const Vector2D& pos, std::vector<std::unique_ptr<SLayerSurface>>* layerSurfaces, Vector2D* sCoords,
                                                SLayerSurface** ppLayerSurfaceFound) {
+    static auto* const PLAYERHOGMOUSE = (Hyprlang::INT* const*)g_pConfigManager->getConfigValuePtr("misc:layers_hog_mouse_focus");
+
     for (auto& ls : *layerSurfaces | std::views::reverse) {
         if (ls->fadingOut || !ls->layerSurface || (ls->layerSurface && !ls->layerSurface->surface->mapped) || ls->alpha.fl() == 0.f)
             continue;
 
         auto SURFACEAT = wlr_layer_surface_v1_surface_at(ls->layerSurface, pos.x - ls->geometry.x, pos.y - ls->geometry.y, &sCoords->x, &sCoords->y);
+        if (*PLAYERHOGMOUSE && ls->layerSurface->current.keyboard_interactive && ls->layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP) {
+            if (!SURFACEAT)
+                SURFACEAT = ls->layerSurface->surface;
+
+            *ppLayerSurfaceFound = ls.get();
+            return SURFACEAT;
+        }
 
         if (SURFACEAT) {
             if (!pixman_region32_not_empty(&SURFACEAT->input_region))

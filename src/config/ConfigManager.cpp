@@ -300,6 +300,7 @@ CConfigManager::CConfigManager() {
     m_pConfig->addConfigValue("misc:key_press_enables_dpms", {0L});
     m_pConfig->addConfigValue("misc:always_follow_on_dnd", {1L});
     m_pConfig->addConfigValue("misc:layers_hog_keyboard_focus", {1L});
+    m_pConfig->addConfigValue("misc:layers_hog_mouse_focus", {0L});
     m_pConfig->addConfigValue("misc:animate_manual_resizes", {0L});
     m_pConfig->addConfigValue("misc:animate_mouse_windowdragging", {0L});
     m_pConfig->addConfigValue("misc:disable_autoreload", {0L});
